@@ -63,6 +63,19 @@
   .ph.show{opacity:1}
   #ph-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:2vw;
     font-size:1.1vw;color:var(--muted)}
+  #ph-setup{position:absolute;left:50%;bottom:2vw;transform:translateX(-50%)}
+  .btn{font:inherit;font-size:1.1vw;padding:.8vw 1.6vw;border-radius:3vw;border:1px solid var(--faint);
+    background:var(--panel);color:var(--text);cursor:pointer}
+  .btn:focus,#gh-input:focus{outline:.2vw solid var(--text);outline-offset:.3vw}
+  .btn.primary{background:var(--text);color:var(--bg);border-color:var(--text)}
+  #gh-dialog{position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.75);z-index:10}
+  #gh-dialog[hidden]{display:none}
+  #gh-box{width:44vw;background:var(--panel);border-radius:1.2vw;padding:2.6vw;display:flex;flex-direction:column;gap:1.3vw}
+  #gh-box h2{font-size:1.8vw;font-weight:400}
+  #gh-box p{font-size:1.05vw;color:var(--muted);line-height:1.5}
+  #gh-input{font:inherit;font-size:1.2vw;padding:.9vw 1.1vw;border-radius:.6vw;border:1px solid var(--faint);
+    background:var(--bg);color:var(--text)}
+  #gh-actions{display:flex;gap:1vw;justify-content:flex-end}
   svg{fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 </style>
 </head>
@@ -101,8 +114,21 @@
       <img class="ph" id="phA" alt="">
       <img class="ph" id="phB" alt="">
       <div id="ph-msg">Bilder werden geladen …</div>
+      <button id="ph-setup" class="btn" hidden>Zugang einrichten</button>
     </div>
   </section>
+</div>
+
+<div id="gh-dialog" hidden>
+  <div id="gh-box">
+    <h2>Zugang zu deinen Bildern</h2>
+    <p>Füge hier deinen GitHub-Zugangsschlüssel ein (beginnt mit „github_pat_“). Er wird nur auf diesem Gerät gespeichert.</p>
+    <input id="gh-input" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+    <div id="gh-actions">
+      <button id="gh-cancel" class="btn">Abbrechen</button>
+      <button id="gh-save" class="btn primary">Speichern</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -113,10 +139,9 @@ const CONFIG = {
   spotifyClientId: "354dc70074044697a0a396eaee264008",       // Client-ID aus dem Spotify-Developer-Dashboard hier eintragen
   ort: "Baldham",
   lat: 48.104, lon: 11.776,  // Koordinaten für das Wetter
-  bilderOrdner: "bilder",    // Ordner im GitHub-Repository
-  bildDauer: 20,             // Sekunden pro Bild
-  githubUser: "",            // leer lassen = wird automatisch aus der Adresse erkannt
-  githubRepo: ""
+  bilderRepo: "ivorymaplegaming-creator/tv-bilder",          // PRIVATES Repository mit deinen Bildern, z. B. "DEINNAME/tv-bilder"
+  bilderOrdner: "",          // Unterordner darin (leer = Bilder liegen direkt im Repository)
+  bildDauer: 20              // Sekunden pro Bild
 };
 /* ============================================================ */
 
@@ -176,48 +201,81 @@ async function loadWeather(){
   }catch(e){ $('wdesc').textContent = 'Wetter gerade nicht erreichbar'; }
 }
 
-/* ---------- Bilder aus dem GitHub-Ordner ---------- */
+/* ---------- Bilder aus einem PRIVATEN GitHub-Repository ----------
+   Die Bilder sind nicht öffentlich. Die Seite lädt sie mit einem
+   Lese-Schlüssel, der nur auf dem Fire TV gespeichert ist.          */
 let photos = [], idx = 0, front = null, known = new Set(), photoTimer = null;
-function repoInfo(){
-  let u = CONFIG.githubUser, r = CONFIG.githubRepo;
-  if(!u && location.hostname.endsWith('.github.io')){
-    u = location.hostname.split('.')[0];
-    const seg = location.pathname.split('/').filter(Boolean)[0];
-    r = (seg && !seg.includes('.')) ? seg : u+'.github.io';
-  }
-  return (u && r) ? {u, r} : null;
-}
 const shuffle = a => { a = a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; };
+const ghToken = () => ls.get('gh_token');
+const ghHeaders = extra => Object.assign({Authorization:'Bearer '+ghToken(), 'X-GitHub-Api-Version':'2022-11-28'}, extra || {});
+
+function needSetup(msg){
+  $('ph-msg').textContent = msg;
+  $('ph-setup').hidden = false;
+}
 async function loadPhotos(){
-  const info = repoInfo();
-  if(!info){ $('ph-msg').textContent = 'Bilder: GitHub-Repository nicht erkannt.'; return; }
+  if(!CONFIG.bilderRepo){ $('ph-msg').textContent = 'Bilder: Repository ist noch nicht eingetragen (bilderRepo).'; return; }
+  if(!ghToken()){ needSetup('Deine Bilder sind geschützt.'); return; }
   try{
-    const res = await fetch('https://api.github.com/repos/'+info.u+'/'+info.r+'/contents/'+CONFIG.bilderOrdner);
+    const path = CONFIG.bilderOrdner ? '/'+CONFIG.bilderOrdner.replace(/^\/|\/$/g,'') : '';
+    const res = await fetch('https://api.github.com/repos/'+CONFIG.bilderRepo+'/contents'+path,
+      {headers:ghHeaders({Accept:'application/vnd.github+json'}), cache:'no-store'});
+    if(res.status === 401 || res.status === 403 || res.status === 404){
+      if(!photos.length) needSetup('Zugang ungültig oder abgelaufen.');
+      return;
+    }
     if(!res.ok) throw new Error(res.status);
+    $('ph-setup').hidden = true;
     const urls = (await res.json())
       .filter(f => f.type==='file' && /\.(jpe?g|png|webp|gif)$/i.test(f.name))
-      .map(f => f.download_url);
-    if(!urls.length){ $('ph-msg').textContent = 'Lege Bilder in den Ordner „'+CONFIG.bilderOrdner+'“.'; photos=[]; return; }
-    const fresh = urls.filter(u => !known.has(u));         // neue Bilder zuerst zeigen
+      .map(f => f.url);                                      // API-Adresse, braucht den Schlüssel
+    if(!urls.length){ $('ph-msg').textContent = 'Lade Bilder in dein privates Repository hoch.'; photos=[]; return; }
+    const fresh = urls.filter(u => !known.has(u));           // neue Bilder zuerst zeigen
     const rest  = shuffle(urls.filter(u => known.has(u)));
     const first = !photos.length;
     if(fresh.length || urls.length !== photos.length){ photos = fresh.concat(rest); idx = 0; }
     known = new Set(urls);
-    if(first){ $('ph-msg').textContent = ''; nextPhoto(); photoTimer = setInterval(nextPhoto, CONFIG.bildDauer*1000); }
+    if(first){ $('ph-msg').textContent = ''; nextPhoto(); clearInterval(photoTimer); photoTimer = setInterval(nextPhoto, CONFIG.bildDauer*1000); }
   }catch(e){
     if(!photos.length) $('ph-msg').textContent = 'Bilder gerade nicht erreichbar.';
   }
 }
-function nextPhoto(){
+async function nextPhoto(){
   if(!photos.length) return;
   if(idx >= photos.length){ idx = 0; photos = shuffle(photos); }
-  const url = photos[idx++];
-  const back = front === $('phA') ? $('phB') : $('phA');
-  const pre = new Image();
-  pre.onload = () => { back.src = url; back.classList.add('show'); if(front) front.classList.remove('show'); front = back; };
-  pre.onerror = () => setTimeout(nextPhoto, 1500);
-  pre.src = url;
+  const api = photos[idx++];
+  try{
+    const res = await fetch(api, {headers:ghHeaders({Accept:'application/vnd.github.raw'})});
+    if(!res.ok) throw new Error(res.status);
+    const url = URL.createObjectURL(await res.blob());
+    const back = front === $('phA') ? $('phB') : $('phA');
+    const pre = new Image();
+    pre.onload = () => {
+      const old = back.src;
+      back.src = url; back.classList.add('show');
+      if(front) front.classList.remove('show');
+      front = back;
+      if(old && old.startsWith('blob:')) URL.revokeObjectURL(old);   // Speicher freigeben
+    };
+    pre.onerror = () => { URL.revokeObjectURL(url); setTimeout(nextPhoto, 1500); };
+    pre.src = url;
+  }catch(e){ setTimeout(nextPhoto, 5000); }
 }
+
+/* Dialog zum einmaligen Eintragen des Schlüssels */
+$('ph-setup').addEventListener('click', () => { $('gh-dialog').hidden = false; $('gh-input').value = ''; $('gh-input').focus(); });
+$('gh-cancel').addEventListener('click', () => { $('gh-dialog').hidden = true; });
+$('gh-save').addEventListener('click', () => {
+  const t = $('gh-input').value.trim();
+  if(!t) return;
+  ls.set('gh_token', t);
+  $('gh-dialog').hidden = true;
+  $('ph-setup').hidden = true;
+  $('ph-msg').textContent = 'Bilder werden geladen …';
+  photos = []; known = new Set();
+  loadPhotos();
+});
+$('gh-input').addEventListener('keydown', e => { if(e.key === 'Enter') $('gh-save').click(); });
 
 /* ---------- Spotify (nur Anzeige, Musik läuft in der Spotify-App) ---------- */
 const redirectUri = location.origin + location.pathname;
