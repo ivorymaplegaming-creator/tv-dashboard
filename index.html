@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TV-Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0b0d; --panel:#131519; --text:#ecedee; --muted:#8b8f96; --faint:#25282e; --accent:#1ed760;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);color:var(--text);
+    font-family:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+  #app{position:fixed;inset:0;display:grid;grid-template-columns:0.9fr 1.1fr;gap:4vw;padding:4vw 4.5vw;
+    transition:transform 3s ease}
+  .muted{color:var(--muted)}
+  .label{font-size:.95vw;letter-spacing:.25em;text-transform:uppercase;color:var(--muted);font-weight:500}
+
+  /* ---------- Musik ---------- */
+  #music{position:relative;display:flex;flex-direction:column;justify-content:center;gap:2.4vw;min-width:0}
+  #music-bg{position:fixed;left:-10vw;top:-10vh;width:60vw;height:120vh;object-fit:cover;
+    filter:blur(90px) saturate(1.2);opacity:0;transition:opacity 2s;pointer-events:none;z-index:-1}
+  #music-bg.on{opacity:.22}
+  #cover-wrap{position:relative;width:min(30vw,52vh);aspect-ratio:1;border-radius:1vw;overflow:hidden;
+    background:var(--panel);box-shadow:0 2vw 5vw rgba(0,0,0,.5)}
+  #cover{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1s}
+  #cover.on{opacity:1}
+  #cover-empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--faint)}
+  #cover-empty svg{width:30%;height:30%}
+  #track{width:min(30vw,52vh);min-width:0}
+  #state{display:flex;align-items:center;gap:.7vw;margin-bottom:1vw}
+  #dot{width:.55vw;height:.55vw;border-radius:50%;background:var(--muted)}
+  #dot.play{background:var(--accent)}
+  #title{font-size:2.4vw;font-weight:400;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #artist{font-size:1.4vw;font-weight:300;color:var(--muted);margin-top:.4vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #bar{height:.25vw;background:var(--faint);border-radius:1vw;margin-top:2vw;overflow:hidden}
+  #fill{height:100%;width:0;background:var(--text);border-radius:1vw;transition:width 1s linear}
+  #times{display:flex;justify-content:space-between;font-size:.95vw;color:var(--muted);margin-top:.7vw;font-variant-numeric:tabular-nums}
+  #login{align-self:flex-start;font:inherit;font-size:1.2vw;padding:.9vw 1.8vw;border-radius:3vw;border:0;
+    background:var(--accent);color:#000;font-weight:500;cursor:pointer}
+  #login:focus{outline:.2vw solid var(--text);outline-offset:.3vw}
+  #music-msg{font-size:1.05vw}
+
+  /* ---------- Rechte Seite ---------- */
+  #side{display:grid;grid-template-rows:auto 1fr;gap:2.8vw;min-height:0}
+  #top{display:flex;justify-content:space-between;align-items:flex-start;gap:2vw}
+  #clock{font-size:7.2vw;font-weight:200;line-height:.95;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  #date{font-size:1.35vw;font-weight:300;color:var(--muted);margin-top:.9vw}
+  #weather{text-align:right}
+  #wnow{display:flex;align-items:center;justify-content:flex-end;gap:1vw}
+  #wicon svg{width:3.6vw;height:3.6vw}
+  #wtemp{font-size:4.2vw;font-weight:200;line-height:1}
+  #wdesc{font-size:1.1vw;margin-top:.6vw}
+  #wdays{display:flex;justify-content:flex-end;gap:1.8vw;margin-top:1.4vw}
+  .day{display:flex;flex-direction:column;align-items:center;gap:.35vw;font-size:.95vw;color:var(--muted)}
+  .day svg{width:1.7vw;height:1.7vw;color:var(--text)}
+  .day b{font-weight:400;color:var(--text)}
+
+  #photos{position:relative;border-radius:1.2vw;overflow:hidden;background:var(--panel);min-height:0}
+  .ph{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 2.5s ease}
+  .ph.show{opacity:1}
+  #ph-msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:2vw;
+    font-size:1.1vw;color:var(--muted)}
+  svg{fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+</style>
+</head>
+<body>
+<img id="music-bg" alt="">
+<div id="app">
+  <section id="music">
+    <div id="cover-wrap">
+      <img id="cover" alt="">
+      <div id="cover-empty"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
+    </div>
+    <div id="track">
+      <div id="state"><span id="dot"></span><span id="state-text" class="label">Spotify</span></div>
+      <div id="title">Gerade läuft nichts</div>
+      <div id="artist">&nbsp;</div>
+      <div id="bar"><div id="fill"></div></div>
+      <div id="times"><span id="pos">0:00</span><span id="dur">0:00</span></div>
+    </div>
+    <button id="login" hidden>Mit Spotify verbinden</button>
+    <div id="music-msg" class="muted"></div>
+  </section>
+
+  <section id="side">
+    <div id="top">
+      <div>
+        <div id="clock">--:--</div>
+        <div id="date"></div>
+      </div>
+      <div id="weather">
+        <div id="wnow"><span id="wicon"></span><span id="wtemp">–°</span></div>
+        <div id="wdesc" class="muted"></div>
+        <div id="wdays"></div>
+      </div>
+    </div>
+    <div id="photos">
+      <img class="ph" id="phA" alt="">
+      <img class="ph" id="phB" alt="">
+      <div id="ph-msg">Bilder werden geladen …</div>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ============================================================
+   EINSTELLUNGEN – nur hier etwas ändern
+   ============================================================ */
+const CONFIG = {
+  spotifyClientId: "",       // Client-ID aus dem Spotify-Developer-Dashboard hier eintragen
+  ort: "Baldham",
+  lat: 48.104, lon: 11.776,  // Koordinaten für das Wetter
+  bilderOrdner: "bilder",    // Ordner im GitHub-Repository
+  bildDauer: 20,             // Sekunden pro Bild
+  githubUser: "",            // leer lassen = wird automatisch aus der Adresse erkannt
+  githubRepo: ""
+};
+/* ============================================================ */
+
+const $ = id => document.getElementById(id);
+
+/* ---------- Uhr ---------- */
+function tick(){
+  const d = new Date();
+  $('clock').textContent = d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+  $('date').textContent = d.toLocaleDateString('de-DE',{weekday:'long',day:'numeric',month:'long'});
+  renderProgress();
+}
+
+/* ---------- Wetter (Open-Meteo, ohne Anmeldung) ---------- */
+const CLOUD = 'M7 14h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 7 3.5 3.5 0 0 0 7 14z';
+const ICONS = {
+  sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon:'<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
+  partly:'<circle cx="8" cy="8" r="3"/><path d="M8 2.5v1M2.5 8h1M4.1 4.1l.7.7M11.9 4.1l-.7.7"/><path d="M9 20h8a3.5 3.5 0 0 0 .4-6.98A5 5 0 0 0 8 14a3 3 0 0 0 1 6z"/>',
+  cloud:'<path d="M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 11 3.5 3.5 0 0 0 7 18z"/>',
+  fog:'<path d="M4 8h16M4 12h16M6 16h12M8 20h8"/>',
+  rain:'<path d="'+CLOUD+'"/><path d="M8.5 17l-1 3M12.5 17l-1 3M16.5 17l-1 3"/>',
+  snow:'<path d="'+CLOUD+'"/><path d="M8 18h.01M12 20h.01M16 18h.01M10 22h.01M14 22h.01" stroke-width="2.4"/>',
+  storm:'<path d="'+CLOUD+'"/><path d="M12.5 15l-2 3.5h3L11.5 22"/>'
+};
+const svg = k => '<svg viewBox="0 0 24 24">'+ICONS[k]+'</svg>';
+function wInfo(c, isDay=1){
+  if(c===0) return [isDay?'sun':'moon','Klar'];
+  if(c<=2)  return [isDay?'partly':'cloud', c===1?'Überwiegend klar':'Teilweise bewölkt'];
+  if(c===3) return ['cloud','Bedeckt'];
+  if(c<=48) return ['fog','Nebel'];
+  if(c<=57) return ['rain','Nieselregen'];
+  if(c<=67) return ['rain','Regen'];
+  if(c<=77) return ['snow','Schnee'];
+  if(c<=82) return ['rain','Regenschauer'];
+  if(c<=86) return ['snow','Schneeschauer'];
+  return ['storm','Gewitter'];
+}
+async function loadWeather(){
+  try{
+    const u = 'https://api.open-meteo.com/v1/forecast?latitude='+CONFIG.lat+'&longitude='+CONFIG.lon+
+      '&current=temperature_2m,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min'+
+      '&timezone=Europe%2FBerlin&forecast_days=4';
+    const j = await (await fetch(u)).json();
+    const [ic, txt] = wInfo(j.current.weather_code, j.current.is_day);
+    $('wicon').innerHTML = svg(ic);
+    $('wtemp').textContent = Math.round(j.current.temperature_2m)+'°';
+    $('wdesc').textContent = txt+' · '+Math.round(j.daily.temperature_2m_max[0])+'° / '+
+      Math.round(j.daily.temperature_2m_min[0])+'° · '+CONFIG.ort;
+    let html = '';
+    for(let i=1;i<j.daily.time.length;i++){
+      const day = new Date(j.daily.time[i]+'T12:00').toLocaleDateString('de-DE',{weekday:'short'}).replace('.','');
+      html += '<div class="day">'+day+svg(wInfo(j.daily.weather_code[i])[0])+
+        '<span><b>'+Math.round(j.daily.temperature_2m_max[i])+'°</b> '+Math.round(j.daily.temperature_2m_min[i])+'°</span></div>';
+    }
+    $('wdays').innerHTML = html;
+  }catch(e){ $('wdesc').textContent = 'Wetter gerade nicht erreichbar'; }
+}
+
+/* ---------- Bilder aus dem GitHub-Ordner ---------- */
+let photos = [], idx = 0, front = null, known = new Set(), photoTimer = null;
+function repoInfo(){
+  let u = CONFIG.githubUser, r = CONFIG.githubRepo;
+  if(!u && location.hostname.endsWith('.github.io')){
+    u = location.hostname.split('.')[0];
+    const seg = location.pathname.split('/').filter(Boolean)[0];
+    r = (seg && !seg.includes('.')) ? seg : u+'.github.io';
+  }
+  return (u && r) ? {u, r} : null;
+}
+const shuffle = a => { a = a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; };
+async function loadPhotos(){
+  const info = repoInfo();
+  if(!info){ $('ph-msg').textContent = 'Bilder: GitHub-Repository nicht erkannt.'; return; }
+  try{
+    const res = await fetch('https://api.github.com/repos/'+info.u+'/'+info.r+'/contents/'+CONFIG.bilderOrdner);
+    if(!res.ok) throw new Error(res.status);
+    const urls = (await res.json())
+      .filter(f => f.type==='file' && /\.(jpe?g|png|webp|gif)$/i.test(f.name))
+      .map(f => f.download_url);
+    if(!urls.length){ $('ph-msg').textContent = 'Lege Bilder in den Ordner „'+CONFIG.bilderOrdner+'“.'; photos=[]; return; }
+    const fresh = urls.filter(u => !known.has(u));         // neue Bilder zuerst zeigen
+    const rest  = shuffle(urls.filter(u => known.has(u)));
+    const first = !photos.length;
+    if(fresh.length || urls.length !== photos.length){ photos = fresh.concat(rest); idx = 0; }
+    known = new Set(urls);
+    if(first){ $('ph-msg').textContent = ''; nextPhoto(); photoTimer = setInterval(nextPhoto, CONFIG.bildDauer*1000); }
+  }catch(e){
+    if(!photos.length) $('ph-msg').textContent = 'Bilder gerade nicht erreichbar.';
+  }
+}
+function nextPhoto(){
+  if(!photos.length) return;
+  if(idx >= photos.length){ idx = 0; photos = shuffle(photos); }
+  const url = photos[idx++];
+  const back = front === $('phA') ? $('phB') : $('phA');
+  const pre = new Image();
+  pre.onload = () => { back.src = url; back.classList.add('show'); if(front) front.classList.remove('show'); front = back; };
+  pre.onerror = () => setTimeout(nextPhoto, 1500);
+  pre.src = url;
+}
+
+/* ---------- Spotify (nur Anzeige, Musik läuft in der Spotify-App) ---------- */
+const redirectUri = location.origin + location.pathname;
+const ls = {
+  get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+  set(k,v){ try{ v==null ? localStorage.removeItem(k) : localStorage.setItem(k,v); }catch(e){} }
+};
+const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+
+async function spotifyLogin(){
+  const verifier = b64url(crypto.getRandomValues(new Uint8Array(64)));
+  const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+  ls.set('sp_verifier', verifier);
+  location.href = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({
+    client_id: CONFIG.spotifyClientId, response_type: 'code', redirect_uri: redirectUri,
+    code_challenge_method: 'S256', code_challenge: challenge,
+    scope: 'user-read-currently-playing user-read-playback-state'
+  });
+}
+async function tokenRequest(params){
+  const res = await fetch('https://accounts.spotify.com/api/token', {
+    method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:new URLSearchParams(params)
+  });
+  if(!res.ok){ const err = new Error('token'); err.status = res.status; throw err; }
+  const j = await res.json();
+  ls.set('sp_access', j.access_token);
+  ls.set('sp_expires', String(Date.now() + (j.expires_in - 60) * 1000));
+  if(j.refresh_token) ls.set('sp_refresh', j.refresh_token);
+}
+async function handleRedirect(){
+  const code = new URLSearchParams(location.search).get('code');
+  if(!code) return;
+  history.replaceState(null, '', redirectUri);
+  try{
+    await tokenRequest({grant_type:'authorization_code', code, redirect_uri:redirectUri,
+      client_id:CONFIG.spotifyClientId, code_verifier:ls.get('sp_verifier')});
+  }catch(e){ $('music-msg').textContent = 'Anmeldung bei Spotify fehlgeschlagen.'; }
+}
+async function accessToken(){
+  if(ls.get('sp_access') && Date.now() < +ls.get('sp_expires')) return ls.get('sp_access');
+  const r = ls.get('sp_refresh');
+  if(!r) return null;
+  try{
+    await tokenRequest({grant_type:'refresh_token', refresh_token:r, client_id:CONFIG.spotifyClientId});
+  }catch(e){
+    if(e.status === 400){ ls.set('sp_refresh', null); return null; }  // Anmeldung abgelaufen
+    throw e;                                                          // nur Netzwerkproblem
+  }
+  return ls.get('sp_access');
+}
+
+let np = {playing:false, pos:0, dur:0, at:0, id:null};
+const fmt = ms => { const s = Math.max(0, Math.floor(ms/1000)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); };
+function renderProgress(){
+  if(!np.dur) return;
+  const pos = Math.min(np.dur, np.pos + (np.playing ? Date.now() - np.at : 0));
+  $('fill').style.width = (pos / np.dur * 100) + '%';
+  $('pos').textContent = fmt(pos);
+  $('dur').textContent = fmt(np.dur);
+}
+function setIdle(text){
+  np = {playing:false, pos:0, dur:0, at:0, id:null};
+  $('dot').className = ''; $('state-text').textContent = 'Spotify';
+  $('title').textContent = text || 'Gerade läuft nichts';
+  $('artist').innerHTML = '&nbsp;';
+  $('fill').style.width = '0'; $('pos').textContent = '0:00'; $('dur').textContent = '0:00';
+  $('cover').classList.remove('on'); $('music-bg').classList.remove('on');
+}
+async function pollSpotify(){
+  let delay = 5000;
+  try{
+    if(!CONFIG.spotifyClientId){ $('music-msg').textContent = 'Spotify ist noch nicht eingerichtet (Client-ID fehlt).'; return; }
+    const tok = await accessToken();
+    if(!tok){ $('login').hidden = false; setIdle('Nicht verbunden'); return; }
+    $('login').hidden = true; $('music-msg').textContent = '';
+    const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing?additional_types=track,episode',
+      {headers:{Authorization:'Bearer '+tok}});
+    if(res.status === 401){ ls.set('sp_expires','0'); delay = 1000; return; }
+    if(res.status === 204 || !res.ok){ setIdle(); delay = 15000; return; }
+    const j = await res.json();
+    if(!j.item){ setIdle(j.currently_playing_type === 'ad' ? 'Werbung' : null); return; }
+    const it = j.item;
+    const artist = it.artists ? it.artists.map(a => a.name).join(', ') : (it.show ? it.show.name : '');
+    const imgs = it.album ? it.album.images : (it.images || []);
+    np = {playing:j.is_playing, pos:j.progress_ms || 0, dur:it.duration_ms || 0, at:Date.now(), id:np.id};
+    $('dot').className = j.is_playing ? 'play' : '';
+    $('state-text').textContent = j.is_playing ? 'Läuft gerade' : 'Pausiert';
+    if(np.id !== it.id){
+      np.id = it.id;
+      $('title').textContent = it.name;
+      $('artist').textContent = artist;
+      const url = imgs[0] && imgs[0].url;
+      if(url){
+        const pre = new Image();
+        pre.onload = () => { $('cover').src = url; $('music-bg').src = url; $('cover').classList.add('on'); $('music-bg').classList.add('on'); };
+        pre.src = url;
+      }else{ $('cover').classList.remove('on'); $('music-bg').classList.remove('on'); }
+    }
+    renderProgress();
+    if(!j.is_playing) delay = 10000;
+  }catch(e){
+    delay = 15000;
+  }finally{
+    setTimeout(pollSpotify, delay);
+  }
+}
+$('login').addEventListener('click', spotifyLogin);
+
+/* ---------- Bildschirm wach halten & Einbrennschutz ---------- */
+let wakeLock = null;
+async function keepAwake(){ try{ if('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); }catch(e){} }
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') keepAwake(); });
+setInterval(() => {   // verschiebt alles alle 3 Minuten minimal
+  const r = () => Math.round(Math.random()*12 - 6);
+  $('app').style.transform = 'translate('+r()+'px,'+r()+'px)';
+}, 180000);
+document.addEventListener('keydown', function fs(e){
+  if(e.key === 'Enter' && document.documentElement.requestFullscreen && !document.fullscreenElement)
+    document.documentElement.requestFullscreen().catch(()=>{});
+});
+
+/* ---------- Start ---------- */
+(async function start(){
+  tick(); setInterval(tick, 1000);
+  loadWeather(); setInterval(loadWeather, 15*60*1000);
+  loadPhotos();  setInterval(loadPhotos, 5*60*1000);
+  keepAwake();
+  await handleRedirect();
+  pollSpotify();
+})();
+</script>
+</body>
+</html>
